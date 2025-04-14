@@ -1,0 +1,78 @@
+{
+  "realm": "bitlab",
+  "enabled": true,
+  "clients": [
+    {
+      "clientId": "internship-client",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "secret-key-for-client",
+      "redirectUris": [
+        "http://localhost:7070/*"
+      ],
+      "directAccessGrantsEnabled": true,
+      "authorizationServicesEnabled": true
+    }
+  ],
+  "roles": {
+    "realm": [
+      {
+        "name": "ADMIN"
+      },
+      {
+        "name": "TEACHER"
+      },
+      {
+        "name": "USER"
+      }
+    ]
+  },
+  "users": [
+    {
+      "username": "almas06",
+      "email": "almas@mail.ru",
+      "firstName": "Almas",
+      "lastName": "Iskak",
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "admin-password"
+        }
+      ],
+      "realmRoles": ["ADMIN"],
+      "clientRoles": {
+        "realm-management": ["manage-users", "view-users"]
+      }
+    },
+    {
+      "username": "doni06",
+      "email": "doni@mail.ru",
+      "firstName": "Daniyar",
+      "lastName": "Tolik",
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "teacher-password"
+        }
+      ],
+      "realmRoles": ["TEACHER"]
+    },
+    {
+      "username": "aibar06",
+      "email": "aibar@mail.ru",
+      "firstName": "Aibar",
+      "lastName": "Khan",
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "user-password"
+        }
+      ],
+      "realmRoles": ["USER"]
+    }
+  ]
+}
