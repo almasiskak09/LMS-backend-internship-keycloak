@@ -1,10 +1,15 @@
 package kz.bitlab.keycloak_service.Keycloak_Service.service;
 
 import kz.bitlab.keycloak_service.Keycloak_Service.dto.TokenResponseDto;
+import kz.bitlab.keycloak_service.Keycloak_Service.dto.UserCreateDto;
 import kz.bitlab.keycloak_service.Keycloak_Service.dto.UserSignInDto;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.keycloak.admin.client.Keycloak;
+import org.keycloak.admin.client.resource.UserResource;
+import org.keycloak.representations.idm.CredentialRepresentation;
+import org.keycloak.representations.idm.RoleRepresentation;
+import org.keycloak.representations.idm.UserRepresentation;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -13,6 +18,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestTemplate;
+
+import javax.ws.rs.core.Response;
+import java.util.List;
 
 
 @Service
@@ -90,4 +98,44 @@ public class UserService {
         }
     }
 
+    public UserRepresentation createUser(UserCreateDto userCreateDto) {
+        UserRepresentation newUser = new UserRepresentation();
+        newUser.setEmail(userCreateDto.getEmail());
+        newUser.setEmailVerified(true);
+        newUser.setUsername(userCreateDto.getUsername());
+        newUser.setFirstName(userCreateDto.getFirstName());
+        newUser.setLastName(userCreateDto.getLastName());
+        newUser.setEnabled(true);
+
+        CredentialRepresentation credential = new CredentialRepresentation();
+        credential.setType(CredentialRepresentation.PASSWORD);
+        credential.setValue(userCreateDto.getPassword());
+        credential.setTemporary(false);
+        newUser.setCredentials(List.of(credential));
+
+        // Создание пользователя
+        Response response = keycloak.realm(realm).users().create(newUser);
+        if (response.getStatus() == 201) {
+            String location = response.getHeaderString("Location");
+            String userId = location.substring(location.lastIndexOf('/') + 1);
+            newUser.setId(userId);
+
+            // 👉 Назначаем роль (например, "ADMIN")
+            String roleName = userCreateDto.getRole();
+
+            // Получаем доступ к user
+            UserResource userResource = keycloak.realm(realm).users().get(userId);
+
+            // Получаем роль из Realm
+            RoleRepresentation role = keycloak.realm(realm).roles().get(roleName).toRepresentation();
+
+            // Назначаем роль пользователю
+            userResource.roles().realmLevel().add(List.of(role));
+
+            return newUser;
+        } else {
+            String error = response.readEntity(String.class);
+            throw new RuntimeException("Keycloak error: " + error);
+        }
+    }
 }

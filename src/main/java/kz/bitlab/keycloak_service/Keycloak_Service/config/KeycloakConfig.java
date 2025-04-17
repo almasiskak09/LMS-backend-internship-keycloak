@@ -16,7 +16,7 @@ public class KeycloakConfig {
     private String url;
     @Value("${keycloak.realm}")
     private String realm;
-    @Value("${keycloak.client-id")
+    @Value("${keycloak.client-id}")
     private String clientId;
     @Value("${keycloak.client-secret}")
     private String clientSecret;
