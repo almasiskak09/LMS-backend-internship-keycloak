@@ -9,6 +9,11 @@ http://localhost:7071
 - Работа с пользователями: http://localhost:7071/api/user/{command}
 - Работа с аутентификацией: http://localhost:7071/api/auth/{command}
 
+## Дополнительно:
+- При старте Keycloak автоматически импортирует настройки из файла `bitlab-realm.json`.
+- Файл `bitlab-realm.json` находится в папке с проектом `keycloak-service`.
+- Импортируются: Realm, Client, Пользователи и Роли.
+  
 ## Документация Swagger
 Полная документация API доступна по ссылке: http://localhost:7071/swagger-ui/index.html#/
 
