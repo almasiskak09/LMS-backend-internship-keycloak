@@ -1,26 +1,25 @@
 package kz.bitlab.keycloak_service.Keycloak_Service.service;
 
-import kz.bitlab.keycloak_service.Keycloak_Service.dto.TokenResponseDto;
-import kz.bitlab.keycloak_service.Keycloak_Service.dto.UserCreateDto;
-import kz.bitlab.keycloak_service.Keycloak_Service.dto.UserSignInDto;
+import kz.bitlab.keycloak_service.Keycloak_Service.dto.User.UserCreateDto;
+import kz.bitlab.keycloak_service.Keycloak_Service.dto.User.UserResponseDto;
+import kz.bitlab.keycloak_service.Keycloak_Service.dto.User.UserUpdateDto;
+import kz.bitlab.keycloak_service.Keycloak_Service.exception.NotFoundException;
+import kz.bitlab.keycloak_service.Keycloak_Service.userUtil.UserUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.keycloak.admin.client.Keycloak;
+import org.keycloak.admin.client.resource.RealmResource;
 import org.keycloak.admin.client.resource.UserResource;
 import org.keycloak.representations.idm.CredentialRepresentation;
 import org.keycloak.representations.idm.RoleRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
-import org.springframework.util.LinkedMultiValueMap;
-import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestTemplate;
 
 import javax.ws.rs.core.Response;
 import java.util.List;
+import java.util.stream.Collectors;
 
 
 @Service
@@ -43,62 +42,38 @@ public class UserService {
     @Value("${keycloak.client-secret}")
     private String clientSecret;
 
-    public TokenResponseDto signIn(UserSignInDto userSignInDto) {
-        String tokenEndPoint = keycloakUrl + "/realms/" + realm + "/protocol/openid-connect/token";
+    //Получить список всех пользователей
+    public List<UserResponseDto> getAllUsers() {
+        log.info("Получение всех пользователей");
 
-        MultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
-        formData.add("grant_type", "password");
-        formData.add("client_id", clientId);
-        formData.add("client_secret", clientSecret);
-        formData.add("username", userSignInDto.getUsername());
-        formData.add("password", userSignInDto.getPassword());
-        log.info("Logging in with username: {}, client: {}, realm: {}", userSignInDto.getUsername(), clientId, realm);
+        List<UserRepresentation>users = keycloak.realm(realm).users().list();
+        return users.stream()
+                .map(user -> {
+                    String role = getUserPrimaryRole(user.getId());
+                    return userToDto(user, role);
+                })
+                .collect(Collectors.toList());
 
+    }
 
-        HttpHeaders headers = new HttpHeaders();
-        headers.add("Content-type", "application/x-www-form-urlencoded");
-
-        ResponseEntity<TokenResponseDto> response = restTemplate.postForEntity(
-                tokenEndPoint, new HttpEntity<>(formData, headers), TokenResponseDto.class
-        );
-
-        TokenResponseDto responseBody = response.getBody();
-
-        if (response.getStatusCode().is2xxSuccessful() && responseBody != null) {
-            return responseBody;
-        } else {
-            log.error("Keycloak failed to sign in, response: {}", response.getBody());
-            throw new RuntimeException("Invalid username or password");
+    //Получить пользователя по Id
+    public UserResponseDto getUserById(String userId) {
+        try {
+            UserRepresentation user = keycloak.realm(realm)
+                    .users()
+                    .get(userId)
+                    .toRepresentation();
+            String role = getUserPrimaryRole(userId);
+            return userToDto(user, role);
+        }catch (javax.ws.rs.NotFoundException e) {
+            log.error("Пользователь по ID:{} не найден: ", userId);
+            throw new NotFoundException("Пользователь по ID: " + userId+" не найден: " + e.getMessage());
         }
     }
 
-    public TokenResponseDto refreshAccessToken(String refreshToken) {
-        String tokenEndPoint = keycloakUrl + "/realms/" + realm + "/protocol/openid-connect/token";
+    //Создать пользователя
+    public UserCreateDto createUser(UserCreateDto userCreateDto) {
 
-        MultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
-        formData.add("grant_type", "refresh_token");
-        formData.add("refresh_token", refreshToken);
-        formData.add("client_id", clientId);
-        formData.add("client_secret", clientSecret);
-
-        log.info("Refreshing access token: clientId: {}", clientId);
-        HttpHeaders headers = new HttpHeaders();
-        headers.add("Content-type", "application/x-www-form-urlencoded");
-
-        ResponseEntity<TokenResponseDto> response = restTemplate.postForEntity(
-                tokenEndPoint, new HttpEntity<>(formData, headers), TokenResponseDto.class
-        );
-        TokenResponseDto responseBody = response.getBody();
-
-        if (response.getStatusCode().is2xxSuccessful() && responseBody != null) {
-            return responseBody;
-        } else {
-            log.error("Keycloak failed to refresh token, response: {}", response.getBody());
-            throw new RuntimeException("Failed to refresh token");
-        }
-    }
-
-    public UserRepresentation createUser(UserCreateDto userCreateDto) {
         UserRepresentation newUser = new UserRepresentation();
         newUser.setEmail(userCreateDto.getEmail());
         newUser.setEmailVerified(true);
@@ -132,10 +107,119 @@ public class UserService {
             // Назначаем роль пользователю
             userResource.roles().realmLevel().add(List.of(role));
 
-            return newUser;
+            return userCreateDto;
         } else {
             String error = response.readEntity(String.class);
             throw new RuntimeException("Keycloak error: " + error);
         }
     }
+
+    // Обновить данные пользователя
+    public UserResponseDto updateUser(UserUpdateDto userUpdateDto) {
+        String username = UserUtil.getCurrentUsername();
+        List<UserRepresentation> users = keycloak.realm(realm).users().search(username);
+
+        if (users.isEmpty()) {
+            throw new NotFoundException("Пользователь не найден: " + username);
+        }
+
+        String userId = users.get(0).getId();
+        UserResource userResource = keycloak.realm(realm).users().get(userId);
+        UserRepresentation existingUser = userResource.toRepresentation();
+
+        // Устанавливаем ID обязательно!
+        existingUser.setId(userId);
+
+        if (userUpdateDto.getUsername() != null) {
+            existingUser.setUsername(userUpdateDto.getUsername());
+        }
+        if (userUpdateDto.getFirstName() != null) {
+            existingUser.setFirstName(userUpdateDto.getFirstName());
+        }
+        if (userUpdateDto.getLastName() != null) {
+            existingUser.setLastName(userUpdateDto.getLastName());
+        }
+        if (userUpdateDto.getEmail() != null) {
+            existingUser.setEmail(userUpdateDto.getEmail());
+        }
+
+        // Теперь обновляем пользователя
+        userResource.update(existingUser);
+
+        // Получаем роль для ответа
+        List<RoleRepresentation> roles = userResource.roles().realmLevel().listEffective();
+        String roleName = roles.isEmpty() ? null : roles.get(0).getName();
+
+        return userToDto(existingUser, roleName);
+    }
+
+    //Изменить пароль пользователя
+    public void changePassword(String username, String newPassword) {
+        List<UserRepresentation> users = keycloak
+                .realm(realm)
+                .users()
+                .search(username);
+
+        if (users.isEmpty()) {
+            log.error("Пользователь по никнейму: {} не найден: ", username);
+            throw new RuntimeException("Пользователь по никнейму: "+username +" не найден " );
+        }
+
+        UserRepresentation user = users.get(0);
+
+        CredentialRepresentation credential = new CredentialRepresentation();
+        credential.setType(CredentialRepresentation.PASSWORD);
+        credential.setValue(newPassword);
+        credential.setTemporary(false);
+
+        keycloak
+                .realm(realm)
+                .users()
+                .get(user.getId())
+                .resetPassword(credential);
+
+        log.info("Password changed successfully for username: {}", username);
+    }
+
+    //Удаление пользователя
+    public void deleteUserById(String userId) {
+        log.info("Удаление пользователя");
+
+        RealmResource realmResource = keycloak.realm(realm);
+        try {
+            realmResource.users().get(userId).remove();
+            log.debug("Пользователь с ID {} успешно удален", userId);
+        } catch (Exception e) {
+            log.error("Failed to delete user with ID {}", userId, e);
+            throw new NotFoundException("Пользователь с ID " + userId + " не найден");
+        }
+    }
+
+    //Возвращает роль пользователя
+    public String getUserPrimaryRole(String userId) {
+        List<RoleRepresentation> roles = keycloak.realm(realm)
+                .users()
+                .get(userId)
+                .roles()
+                .realmLevel()
+                .listEffective();
+
+        if (roles.isEmpty()) {
+            return null;
+        }
+        return roles.get(0).getName();
+    }
+
+    //Маппер с KeycloakUser в SpringDto
+    public UserResponseDto userToDto(UserRepresentation user,String role){
+        return UserResponseDto.builder()
+                .id(user.getId())
+                .username(user.getUsername())
+                .firstName(user.getFirstName())
+                .lastName(user.getLastName())
+                .email(user.getEmail())
+                .role(role)
+                .build();
+    }
+
 }
