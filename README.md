@@ -26,7 +26,7 @@ http://localhost:7071
 
 ## Запуск через Docker
 Для запуска всех сервисов используйте команду:
-docker-compose up -d
+docker-compose up --build
 
 ## При запуске поднимаются:
 
